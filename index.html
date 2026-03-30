@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDA Simulator — Pushdown Automata</title>
+    <meta name="description" content="Interactive Pushdown Automata simulator with step-by-step visualization">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+                    },
+                    colors: {
+                        pda: {
+                            bg:      '#06080f',
+                            panel:   '#0f1320',
+                            surface: '#161c30',
+                            border:  '#1e2545',
+                            glow:    '#6366f1',
+                        }
+                    },
+                    fontSize: {
+                        base: ['16px', '1.5'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Lucide Icons (vanilla JS, not React) -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="h-full overflow-hidden bg-pda-bg text-slate-200 font-sans text-base flex flex-col">
+
+    <!-- ═══════════════════════════════════════════════════════
+         TOOLBAR  (always visible, compact)
+         ═══════════════════════════════════════════════════════ -->
+    <header id="toolbar" class="h-14 flex items-center gap-2 px-3 bg-pda-panel border-b border-pda-border flex-shrink-0 z-30">
+
+        <!-- Hamburger toggle -->
+        <button id="btn-sidebar-toggle"
+                class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/5 active:bg-white/10 transition-colors"
+                title="Toggle sidebar (Ctrl+B)">
+            <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+
+        <!-- Title -->
+        <div class="flex items-center gap-1.5 select-none">
+            <span class="text-lg font-bold tracking-tight">⟨PDA⟩</span>
+            <span class="text-lg font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent hidden sm:inline">Simulator</span>
+        </div>
+
+        <div class="w-px h-7 bg-pda-border mx-1"></div>
+
+        <!-- Example dropdown -->
+        <select id="example-select"
+                class="bg-pda-surface border border-pda-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-indigo-500/50 cursor-pointer min-w-[140px]">
+            <option value="">Load Example…</option>
+            <option value="balanced-parens">Balanced Parentheses</option>
+            <option value="anbn">aⁿbⁿ</option>
+            <option value="wcwr">wcwᴿ</option>
+        </select>
+
+        <div class="w-px h-7 bg-pda-border mx-1 hidden md:block"></div>
+
+        <!-- Input string -->
+        <div class="flex items-center gap-2 flex-1 max-w-xs">
+            <label for="input-string" class="text-[11px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap hidden lg:inline">Input:</label>
+            <input type="text" id="input-string"
+                   placeholder="e.g. (())"
+                   class="flex-1 min-w-0 bg-pda-surface border border-pda-border rounded-lg px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
+                   spellcheck="false">
+        </div>
+
+        <!-- Control buttons -->
+        <div class="flex items-center gap-1.5">
+            <button id="btn-run"
+                    class="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:pointer-events-none text-white text-sm font-semibold rounded-lg transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/35 hover:-translate-y-px">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Run</span>
+            </button>
+            <button id="btn-step"
+                    class="flex items-center gap-1.5 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 disabled:pointer-events-none text-white text-sm font-semibold rounded-lg transition-all shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/35 hover:-translate-y-px">
+                <i data-lucide="step-forward" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Step</span>
+            </button>
+            <button id="btn-reset"
+                    class="flex items-center gap-1.5 px-3 py-2 border border-pda-border text-slate-400 hover:text-white hover:bg-white/5 text-sm font-semibold rounded-lg transition-all">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Reset</span>
+            </button>
+        </div>
+
+        <div class="w-px h-7 bg-pda-border mx-1 hidden lg:block"></div>
+
+        <!-- Speed -->
+        <div class="items-center gap-2 hidden lg:flex">
+            <i data-lucide="gauge" class="w-4 h-4 text-slate-500"></i>
+            <input type="range" id="speed-slider" min="1" max="10" value="5" class="accent-indigo-500 w-20">
+            <span id="speed-label" class="text-xs font-mono text-indigo-400 min-w-[2.5ch]">5×</span>
+        </div>
+    </header>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         MAIN AREA  (sidebar + workspace)
+         ═══════════════════════════════════════════════════════ -->
+    <main id="app-main" class="flex-1 flex overflow-hidden min-h-0">
+
+        <!-- ── SIDEBAR (hidden by default) ──────────────────── -->
+        <aside id="sidebar"
+               class="bg-pda-panel border-r border-pda-border flex flex-col overflow-hidden flex-shrink-0 z-20 transition-[width] duration-300 ease-in-out"
+               style="width: 0;">
+
+            <!-- Sidebar header -->
+            <div class="flex items-center justify-between px-4 py-3 border-b border-pda-border flex-shrink-0">
+                <h2 class="text-sm font-bold uppercase tracking-[0.15em] text-indigo-400 whitespace-nowrap">Configuration</h2>
+                <button id="btn-sidebar-close"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition-colors flex-shrink-0"
+                        title="Close sidebar">
+                    <i data-lucide="x" class="w-4 h-4 text-slate-400"></i>
+                </button>
+            </div>
+
+            <!-- Sidebar content (scrolls internally) -->
+            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 sidebar-scroll">
+
+                <!-- States -->
+                <div>
+                    <label for="states-input" class="field-label">States <span class="hint">(comma-separated)</span></label>
+                    <input type="text" id="states-input" placeholder="q0, q1, q2" class="field-input">
+                </div>
+
+                <!-- Input alphabet -->
+                <div>
+                    <label for="input-alphabet" class="field-label">Input Alphabet</label>
+                    <input type="text" id="input-alphabet" placeholder="a, b" class="field-input">
+                </div>
+
+                <!-- Stack alphabet -->
+                <div>
+                    <label for="stack-alphabet" class="field-label">Stack Alphabet</label>
+                    <input type="text" id="stack-alphabet" placeholder="Z, A, B" class="field-input">
+                </div>
+
+                <!-- Initial stack symbol -->
+                <div>
+                    <label for="initial-stack-symbol" class="field-label">Initial Stack Symbol</label>
+                    <input type="text" id="initial-stack-symbol" placeholder="Z" class="field-input">
+                </div>
+
+                <!-- Start state -->
+                <div>
+                    <label for="start-state" class="field-label">Start State</label>
+                    <input type="text" id="start-state" placeholder="q0" class="field-input">
+                </div>
+
+                <!-- Accept states -->
+                <div>
+                    <label for="accept-states" class="field-label">Accept States <span class="hint">(comma-separated)</span></label>
+                    <input type="text" id="accept-states" placeholder="q2" class="field-input">
+                </div>
+
+                <!-- Transitions -->
+                <div>
+                    <label for="transitions-input" class="field-label">
+                        Transitions
+                        <button type="button" id="btn-insert-epsilon"
+                                class="ml-1 px-2 py-0.5 bg-pda-surface border border-pda-border text-cyan-400 font-mono text-xs rounded-md hover:border-cyan-500/50 transition-colors"
+                                title="Insert ε symbol">ε</button>
+                    </label>
+                    <textarea id="transitions-input" rows="8"
+                              placeholder="state, input, pop -> state, push&#10;&#10;Example:&#10;q0, (, Z -> q0, AZ&#10;q0, ε, Z -> q1, Z"
+                              spellcheck="false"
+                              class="field-textarea"></textarea>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── SIDEBAR RESIZE HANDLE ────────────────────────── -->
+        <div id="sidebar-handle" class="sidebar-resize-handle"></div>
+
+
+        <!-- ── WORKSPACE (canvas + trace) ───────────────────── -->
+        <div id="workspace" class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+            <!-- Canvas area with floating overlays -->
+            <div id="canvas-area" class="flex-1 relative min-h-0 overflow-hidden bg-pda-bg">
+
+                <!-- PDA Graph canvas -->
+                <canvas id="state-diagram" class="absolute inset-0 w-full h-full"></canvas>
+
+                <!-- ─── Floating: Stack panel (top-right) ──── -->
+                <div id="stack-panel"
+                     class="absolute top-3 right-3 w-52 bg-pda-panel/90 backdrop-blur-xl border border-pda-border rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden z-10 max-h-[calc(100%-24px)]">
+
+                    <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-pda-border">
+                        <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">Stack</span>
+                        <span id="sim-status" class="status-badge">Ready</span>
+                    </div>
+
+                    <div class="px-3.5 py-2 flex items-center justify-between border-b border-white/[0.03]">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">State</span>
+                        <span id="current-state" class="font-mono text-sm font-semibold text-cyan-400">—</span>
+                    </div>
+                    <div class="px-3.5 py-2 flex items-center justify-between border-b border-white/[0.03]">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Remaining</span>
+                        <span id="remaining-input" class="font-mono text-sm font-semibold text-cyan-400">—</span>
+                    </div>
+
+                    <div class="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600 text-center pt-2 pb-0.5">▲ top</div>
+                    <div id="stack-visual" class="flex-1 overflow-y-auto px-2.5 pb-2 space-y-1 min-h-[40px] max-h-[240px]">
+                        <div class="stack-empty-msg">Empty</div>
+                    </div>
+                    <div class="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600 text-center pb-1.5">▼ bottom</div>
+                </div>
+
+                <!-- ─── Floating: Active transition (bottom) ── -->
+                <div id="active-transition"
+                     class="absolute bottom-16 left-1/2 -translate-x-1/2 glass-bar hidden z-10">
+                    <span class="glass-bar-label text-indigo-400">Transition:</span>
+                    <span id="active-trans-text" class="font-mono text-sm font-medium text-cyan-400">—</span>
+                </div>
+
+                <!-- ─── Floating: Input pointer (bottom) ────── -->
+                <div id="input-position"
+                     class="absolute bottom-4 left-1/2 -translate-x-1/2 glass-bar hidden z-10">
+                    <span class="glass-bar-label text-slate-500">Input:</span>
+                    <span id="input-pos-chars" class="flex gap-0.5"></span>
+                </div>
+
+                <!-- ─── Floating: Result banner ─────────────── -->
+                <div id="result-banner" class="result-banner hidden"></div>
+            </div>
+
+
+            <!-- ── TRACE RESIZE HANDLE ──────────────────────── -->
+            <div id="trace-handle" class="trace-resize-handle"></div>
+
+            <!-- ── TRACE PANEL (collapsed by default, 42px) ─── -->
+            <div id="trace-panel"
+                 class="bg-pda-panel border-t border-pda-border flex flex-col overflow-hidden flex-shrink-0"
+                 style="height: 42px;">
+
+                <!-- Header bar (always visible) -->
+                <div id="trace-header"
+                     class="flex items-center gap-2 px-4 h-[42px] min-h-[42px] cursor-pointer hover:bg-white/[0.02] transition-colors select-none flex-shrink-0">
+                    <i data-lucide="chevron-up" id="trace-chevron" class="w-4 h-4 text-slate-500 transition-transform duration-200"></i>
+                    <span class="text-xs font-bold uppercase tracking-[0.15em] text-indigo-400">Execution Trace</span>
+                    <span class="flex-1"></span>
+                    <span id="trace-step-count" class="text-xs font-mono text-slate-600"></span>
+                    <button id="btn-trace-fullscreen"
+                            class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors"
+                            title="Expand trace to fullscreen">
+                        <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-slate-500"></i>
+                    </button>
+                </div>
+
+                <!-- Trace content -->
+                <div class="flex-1 overflow-auto min-h-0">
+                    <table id="trace-table" class="w-full">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-indigo-500/10">
+                                <th class="trace-th">#</th>
+                                <th class="trace-th">State</th>
+                                <th class="trace-th">Read</th>
+                                <th class="trace-th">Pop</th>
+                                <th class="trace-th">Push</th>
+                                <th class="trace-th">Remaining</th>
+                                <th class="trace-th">Stack</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trace-body"></tbody>
+                    </table>
+                    <p id="trace-placeholder" class="text-center text-slate-600 text-sm py-6 italic">
+                        Run a simulation to see the execution trace.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         TRACE FULLSCREEN OVERLAY
+         ═══════════════════════════════════════════════════════ -->
+    <div id="trace-overlay" class="fixed inset-0 z-50 bg-pda-bg/95 backdrop-blur-xl flex flex-col hidden">
+        <div class="flex items-center gap-3 px-6 py-4 border-b border-pda-border flex-shrink-0">
+            <i data-lucide="table" class="w-5 h-5 text-indigo-400"></i>
+            <h2 class="text-lg font-bold text-indigo-400 uppercase tracking-[0.15em]">Execution Trace</h2>
+            <span class="flex-1"></span>
+            <button id="btn-trace-close"
+                    class="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white/5 transition-colors"
+                    title="Close fullscreen">
+                <i data-lucide="x" class="w-5 h-5 text-slate-400"></i>
+            </button>
+        </div>
+        <div class="flex-1 overflow-auto p-6">
+            <table id="trace-table-full" class="w-full text-base">
+                <thead class="sticky top-0">
+                    <tr class="bg-indigo-500/10">
+                        <th class="trace-th-lg">Step</th>
+                        <th class="trace-th-lg">State</th>
+                        <th class="trace-th-lg">Input Read</th>
+                        <th class="trace-th-lg">Pop</th>
+                        <th class="trace-th-lg">Push</th>
+                        <th class="trace-th-lg">Remaining</th>
+                        <th class="trace-th-lg">Stack (top → bottom)</th>
+                    </tr>
+                </thead>
+                <tbody id="trace-body-full"></tbody>
+            </table>
+        </div>
+    </div>
+
+
+    <!-- Scripts (load order: engine → renderer → app) -->
+    <script src="js/pda-engine.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>

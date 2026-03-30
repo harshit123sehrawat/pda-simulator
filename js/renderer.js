@@ -1,0 +1,435 @@
+/**
+ * ============================================================
+ *  State Diagram Renderer
+ *  Draws PDA states (circles) and transitions (arrows)
+ *  on an HTML5 <canvas> element.
+ * ============================================================
+ */
+
+class StateDiagramRenderer {
+
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx    = canvas.getContext('2d');
+
+        // PDA data
+        this.states       = [];
+        this.transitions  = [];
+        this.startState   = '';
+        this.acceptStates = [];
+
+        // Layout
+        this.positions   = {};   // state name → {x, y}
+        this.baseRadius  = 28;   // default radius, auto-scaled for many states
+        this.stateRadius = 28;
+
+        // Highlight state (for animation)
+        this.activeState      = null;
+        this.activeTransition = null; // {from, to}
+        this.isRejected       = false; // red highlight mode
+
+        // Handle high-DPI screens
+        this.dpr = window.devicePixelRatio || 1;
+        this._resizeBound = this.resize.bind(this);
+        window.addEventListener('resize', this._resizeBound);
+    }
+
+    // ── Public API ───────────────────────────────────────────
+
+    /** Load PDA structure and redraw. */
+    configure(states, transitions, startState, acceptStates) {
+        this.states       = states;
+        this.transitions  = transitions;
+        this.startState   = startState;
+        this.acceptStates = acceptStates;
+        this.activeState  = null;
+        this.activeTransition = null;
+        this.layout();
+        this.draw();
+    }
+
+    /** Highlight a state (and optional transition). Call draw() after. */
+    highlight(state, transition) {
+        this.activeState      = state || null;
+        this.activeTransition = transition || null;
+        this.isRejected       = false;
+        this.draw();
+    }
+
+    /** Highlight a state in RED to show rejection. */
+    highlightRejected(state) {
+        this.activeState      = state || null;
+        this.activeTransition = null;
+        this.isRejected       = true;
+        this.draw();
+    }
+
+    /** Clear all highlights. */
+    clearHighlights() {
+        this.activeState = null;
+        this.activeTransition = null;
+        this.isRejected = false;
+        this.draw();
+    }
+
+    /** Fit canvas to its container. */
+    resize() {
+        const container = this.canvas.parentElement;
+        if (!container) return;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        this.canvas.width  = w * this.dpr;
+        this.canvas.height = h * this.dpr;
+        this.canvas.style.width  = w + 'px';
+        this.canvas.style.height = h + 'px';
+        this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        this.layout();
+        this.draw();
+    }
+
+    // ── Layout ───────────────────────────────────────────────
+
+    /**
+     * Place states evenly around a circle.
+     * Auto-scales the state radius and layout radius so that
+     * any number of states can be displayed without overlapping.
+     */
+    layout() {
+        const w  = this.canvas.clientWidth  || 400;
+        const h  = this.canvas.clientHeight || 300;
+        const cx = w / 2;
+        const cy = h / 2;
+        const n  = this.states.length;
+
+        if (n === 0) return;
+
+        // ── Auto-scale state radius for many states ──────────
+        // For ≤4 states keep the default 28px.
+        // For more, shrink so circles don't overlap on the ring.
+        if (n <= 4) {
+            this.stateRadius = this.baseRadius;
+        } else if (n <= 8) {
+            this.stateRadius = Math.max(20, this.baseRadius - (n - 4) * 2);
+        } else {
+            this.stateRadius = Math.max(14, this.baseRadius - 8 - (n - 8));
+        }
+
+        // ── Layout radius: make the ring as large as possible ─
+        // Leave padding = stateRadius + space for labels
+        const padding = this.stateRadius + 40;
+        const maxR = Math.min(cx, cy) - padding;
+
+        // For the ring to avoid overlap, the arc between
+        // adjacent states must be ≥ 2.5× the state radius.
+        const minRingR = (n * this.stateRadius * 2.5) / (2 * Math.PI);
+        const ringR = Math.max(minRingR, Math.min(maxR, Math.min(cx, cy) * 0.55));
+
+        if (n === 1) {
+            this.positions[this.states[0]] = { x: cx, y: cy };
+            return;
+        }
+
+        // Special case: 2 states → horizontal layout
+        if (n === 2) {
+            const spread = Math.min(ringR, (w - padding * 2) / 2);
+            this.positions[this.states[0]] = { x: cx - spread, y: cy };
+            this.positions[this.states[1]] = { x: cx + spread, y: cy };
+            return;
+        }
+
+        // General case: distribute around a circle
+        this.states.forEach((s, i) => {
+            const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+            this.positions[s] = {
+                x: cx + ringR * Math.cos(angle),
+                y: cy + ringR * Math.sin(angle),
+            };
+        });
+    }
+
+    // ── Drawing ──────────────────────────────────────────────
+
+    draw() {
+        const ctx = this.ctx;
+        const w = this.canvas.clientWidth;
+        const h = this.canvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        if (this.states.length === 0) {
+            ctx.fillStyle = '#4b5574';
+            ctx.font = '14px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Load a PDA to see the state diagram', w / 2, h / 2);
+            return;
+        }
+
+        // Group transitions by (from, to) for combined labels
+        const grouped = this._groupTransitions();
+
+        // Draw transitions (arrows) first so states render on top
+        for (const key of Object.keys(grouped)) {
+            const { from, to, labels } = grouped[key];
+            this._drawTransition(from, to, labels);
+        }
+
+        // Draw start arrow
+        this._drawStartArrow();
+
+        // Draw each state
+        for (const s of this.states) {
+            this._drawState(s);
+        }
+    }
+
+    // ── State circle ─────────────────────────────────────────
+
+    _drawState(name) {
+        const ctx = this.ctx;
+        const pos = this.positions[name];
+        if (!pos) return;
+
+        const r = this.stateRadius;
+        const isAccept = this.acceptStates.includes(name);
+        const isActive = this.activeState === name;
+        const isRejState = isActive && this.isRejected;
+
+        ctx.save();
+
+        // Glow for active state (purple = normal, red = rejected)
+        if (isActive) {
+            ctx.shadowBlur  = 22;
+            ctx.shadowColor = isRejState ? '#ef4444' : '#818cf8';
+        }
+
+        // Outer circle
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        if (isRejState) {
+            ctx.fillStyle   = 'rgba(239,68,68,0.18)';
+            ctx.strokeStyle = '#ef4444';
+        } else if (isActive) {
+            ctx.fillStyle   = 'rgba(99,102,241,0.18)';
+            ctx.strokeStyle = '#818cf8';
+        } else {
+            ctx.fillStyle   = 'rgba(15,19,32,0.9)';
+            ctx.strokeStyle = '#4b5574';
+        }
+        ctx.lineWidth = isActive ? 2.5 : 1.5;
+        ctx.fill();
+        ctx.stroke();
+
+        // Double circle for accept state
+        if (isAccept) {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, r - 5, 0, Math.PI * 2);
+            ctx.strokeStyle = isRejState ? '#ef4444' : (isActive ? '#818cf8' : '#4b5574');
+            ctx.lineWidth   = 1.2;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Label — auto-size font to fit inside the circle
+        ctx.fillStyle = isActive ? '#e2e8f0' : '#94a3b8';
+        ctx.textAlign  = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Pick a font size that fits the state name inside the circle
+        let fontSize = r > 24 ? 13 : (r > 18 ? 11 : 9);
+        ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+        // Shrink further if the label is wider than the circle
+        let tw = ctx.measureText(name).width;
+        while (tw > r * 1.6 && fontSize > 7) {
+            fontSize--;
+            ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+            tw = ctx.measureText(name).width;
+        }
+        ctx.fillText(name, pos.x, pos.y);
+    }
+
+    // ── Start arrow ──────────────────────────────────────────
+
+    _drawStartArrow() {
+        const pos = this.positions[this.startState];
+        if (!pos) return;
+        const ctx = this.ctx;
+        const r   = this.stateRadius;
+
+        const startX = pos.x - r - 32;
+        const endX   = pos.x - r - 2;
+        const y      = pos.y;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth   = 1.8;
+        ctx.stroke();
+
+        this._arrowHead(endX, y, 0, '#6366f1');
+    }
+
+    // ── Transitions (arrows between / self-loop) ─────────────
+
+    _groupTransitions() {
+        const map = {};
+        for (const t of this.transitions) {
+            const key = t.from + '→' + t.to;
+            if (!map[key]) {
+                map[key] = { from: t.from, to: t.to, labels: [] };
+            }
+            const pushLabel = t.stackPush === 'ε' ? 'ε' : t.stackPush;
+            map[key].labels.push(`${t.input}, ${t.stackPop} / ${pushLabel}`);
+        }
+        return map;
+    }
+
+    _drawTransition(from, to, labels) {
+        if (from === to) {
+            this._drawSelfLoop(from, labels);
+            return;
+        }
+
+        const ctx = this.ctx;
+        const p1  = this.positions[from];
+        const p2  = this.positions[to];
+        if (!p1 || !p2) return;
+
+        const isActive = this.activeTransition &&
+            this.activeTransition.from === from &&
+            this.activeTransition.to === to;
+
+        // Check if reverse also exists for curving
+        const reverseExists = this.transitions.some(
+            t => t.from === to && t.to === from
+        );
+
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+        const r = this.stateRadius;
+
+        // Perpendicular offset for curving
+        const curveAmount = reverseExists ? 20 : 0;
+        const nx = -Math.sin(angle) * curveAmount;
+        const ny =  Math.cos(angle) * curveAmount;
+
+        const sx = p1.x + r * Math.cos(angle) + nx * 0.3;
+        const sy = p1.y + r * Math.sin(angle) + ny * 0.3;
+        const ex = p2.x - r * Math.cos(angle) + nx * 0.3;
+        const ey = p2.y - r * Math.sin(angle) + ny * 0.3;
+
+        const cpx = (sx + ex) / 2 + nx;
+        const cpy = (sy + ey) / 2 + ny;
+
+        const color = isActive ? '#06b6d4' : '#4b5574';
+        const lw    = isActive ? 2.2 : 1.3;
+
+        ctx.save();
+        if (isActive) { ctx.shadowBlur = 8; ctx.shadowColor = '#06b6d4'; }
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.quadraticCurveTo(cpx, cpy, ex, ey);
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = lw;
+        ctx.stroke();
+        ctx.restore();
+
+        // Arrowhead angle at endpoint
+        const t = 0.98;
+        const tangentX = 2 * (1 - t) * (cpx - sx) + 2 * t * (ex - cpx);
+        const tangentY = 2 * (1 - t) * (cpy - sy) + 2 * t * (ey - cpy);
+        const endAngle = Math.atan2(tangentY, tangentX);
+        this._arrowHead(ex, ey, endAngle, color);
+
+        // Label
+        const labelX = cpx;
+        const labelY = cpy - 8;
+        this._drawLabel(labels, labelX, labelY, isActive);
+    }
+
+    // ── Self-loop ────────────────────────────────────────────
+
+    _drawSelfLoop(state, labels) {
+        const ctx = this.ctx;
+        const pos = this.positions[state];
+        if (!pos) return;
+
+        const isActive = this.activeTransition &&
+            this.activeTransition.from === state &&
+            this.activeTransition.to === state;
+
+        const r = this.stateRadius;
+        const loopR = 18;
+        const cx = pos.x;
+        const cy = pos.y - r - loopR + 2;
+
+        const color = isActive ? '#06b6d4' : '#4b5574';
+        const lw    = isActive ? 2.2 : 1.3;
+
+        ctx.save();
+        if (isActive) { ctx.shadowBlur = 8; ctx.shadowColor = '#06b6d4'; }
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, loopR, 0.3, Math.PI * 2 - 0.3);
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = lw;
+        ctx.stroke();
+        ctx.restore();
+
+        // Arrowhead at the end of the loop
+        const endAngle = Math.PI * 2 - 0.3;
+        const ax = cx + loopR * Math.cos(endAngle);
+        const ay = cy + loopR * Math.sin(endAngle);
+        this._arrowHead(ax, ay, endAngle + Math.PI / 2.5, color);
+
+        // Label above loop
+        this._drawLabel(labels, cx, cy - loopR - 6, isActive);
+    }
+
+    // ── Arrow head ───────────────────────────────────────────
+
+    _arrowHead(x, y, angle, color) {
+        const ctx = this.ctx;
+        const size = 8;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-size, -size / 2.2);
+        ctx.lineTo(-size,  size / 2.2);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // ── Label for transition ─────────────────────────────────
+
+    _drawLabel(labels, x, y, isActive) {
+        const ctx = this.ctx;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `500 10px 'JetBrains Mono', monospace`;
+
+        labels.forEach((label, i) => {
+            const ly = y - ((labels.length - 1) * 6) + i * 13;
+            // Background pill  (roundRect with fallback for older browsers)
+            const tw = ctx.measureText(label).width + 8;
+            ctx.fillStyle = isActive ? 'rgba(6,182,212,0.15)' : 'rgba(15,19,32,0.85)';
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(x - tw / 2, ly - 7, tw, 14, 3);
+            } else {
+                ctx.rect(x - tw / 2, ly - 7, tw, 14);
+            }
+            ctx.fill();
+
+            ctx.fillStyle = isActive ? '#06b6d4' : '#94a3b8';
+            ctx.fillText(label, x, ly);
+        });
+    }
+}
