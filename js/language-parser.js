@@ -1044,9 +1044,10 @@ class LanguageParser {
     /**
      * Validate a generated PDA by running test strings through the simulator.
      * @param {Object} config — PDA configuration with examples
+     * @param {string} acceptanceMode — 'final-state' | 'empty-stack'
      * @returns {Object} validation results
      */
-    static validate(config) {
+    static validate(config, acceptanceMode) {
         const results = { valid: true, tests: [] };
 
         try {
@@ -1063,6 +1064,7 @@ class LanguageParser {
                 acceptStates: config.acceptStates,
                 transitions: parsed,
             });
+            engine.acceptanceMode = acceptanceMode || 'final-state';
 
             const validation = engine.validate();
             if (!validation.valid) {
@@ -1122,7 +1124,7 @@ class LanguageParser {
      * @returns {Object} PDA configuration with metadata
      * @throws {Error} if language cannot be generated in the requested mode
      */
-    static parse(langStr, mode) {
+    static parse(langStr, mode, acceptanceMode) {
         mode = mode || 'DPDA';
 
         if (!langStr || !langStr.trim()) {
@@ -1189,8 +1191,15 @@ class LanguageParser {
         config.pdaType = capability; // 'DPDA' or 'NPDA'
         config.userMode = mode;
 
+        // Adapt the transitions for Empty Stack mode
+        // Generated PDAs default to Final State (leaving Z on stack).
+        // By replacing '-> q_accept, Z' with '-> q_accept, ε', we ensure the stack empties securely.
+        if (acceptanceMode === 'empty-stack') {
+            config.transitionsStr = config.transitionsStr.replace(/-> q_accept, Z/g, '-> q_accept, ε');
+        }
+
         // ── Step 7: Validate ──────────────────────────────────
-        const validation = LanguageParser.validate(config);
+        const validation = LanguageParser.validate(config, acceptanceMode);
         config.validation = validation;
 
         console.log('[PDA-Engine] Validation:', validation.valid ? 'PASSED' : 'FAILED', validation);

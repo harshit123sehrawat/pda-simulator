@@ -1099,3 +1099,109 @@ canvas,
     border-color: rgba(234, 179, 8, 0.3);
 }
 
+
+/* ═══════════════════════════════════════════════════════════
+   ACCEPTANCE MODE TOGGLE  (Final State / Empty Stack)
+   ═══════════════════════════════════════════════════════════ */
+
+.acceptance-mode-toggle {
+    display: flex;
+    gap: 0;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    background: var(--surface-bg);
+}
+
+.acceptance-mode-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.22s ease;
+    position: relative;
+    white-space: nowrap;
+}
+
+.acceptance-mode-btn:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+}
+
+.acceptance-mode-btn:hover:not(.active) {
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="dark"] .acceptance-mode-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Final State active */
+.acceptance-mode-btn.active[data-mode="final-state"] {
+    color: #059669;
+    background: rgba(5, 150, 105, 0.08);
+}
+
+/* Empty Stack active */
+.acceptance-mode-btn.active[data-mode="empty-stack"] {
+    color: #8b5cf6;
+    background: rgba(139, 92, 246, 0.08);
+}
+
+[data-theme="dark"] .acceptance-mode-btn.active[data-mode="empty-stack"] {
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.1);
+}
+
+/* Underline indicator */
+.acceptance-mode-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 16px;
+    height: 2px;
+    border-radius: 2px;
+}
+
+.acceptance-mode-btn.active[data-mode="final-state"]::after {
+    background: #059669;
+}
+
+.acceptance-mode-btn.active[data-mode="empty-stack"]::after {
+    background: #8b5cf6;
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   EMPTY STACK MODE — Stack Panel Visual Indicator
+   ═══════════════════════════════════════════════════════════ */
+
+#stack-panel.empty-stack-mode {
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 0 16px rgba(139, 92, 246, 0.12),
+                0 0 0 1px rgba(139, 92, 246, 0.15);
+}
+
+[data-theme="dark"] #stack-panel.empty-stack-mode {
+    border-color: rgba(167, 139, 250, 0.35);
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.15),
+                0 0 0 1px rgba(139, 92, 246, 0.2);
+}
+
+/* Acceptance mode badge in stack header */
+#stack-panel.empty-stack-mode .status-badge {
+    outline: 1px solid rgba(139, 92, 246, 0.25);
+}
+

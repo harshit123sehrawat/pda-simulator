@@ -208,18 +208,24 @@ class StateDiagramRenderer {
         // Group transitions by (from, to) for combined labels
         const grouped = this._groupTransitions();
 
-        // Draw transitions (arrows) first so states render on top
+        // Pass 1: Draw arrow lines + arrowheads (below states)
         for (const key of Object.keys(grouped)) {
             const { from, to, labels } = grouped[key];
-            this._drawTransition(from, to, labels);
+            this._drawTransitionLine(from, to, labels);
         }
 
         // Draw start arrow
         this._drawStartArrow();
 
-        // Draw each state
+        // Pass 2: Draw each state (on top of arrows)
         for (const s of this.states) {
             this._drawState(s);
+        }
+
+        // Pass 3: Draw labels on top of everything
+        for (const key of Object.keys(grouped)) {
+            const { from, to, labels } = grouped[key];
+            this._drawTransitionLabel(from, to, labels);
         }
     }
 
@@ -328,22 +334,16 @@ class StateDiagramRenderer {
         return map;
     }
 
-    _drawTransition(from, to, labels) {
-        if (from === to) {
-            this._drawSelfLoop(from, labels);
-            return;
-        }
-
-        const ctx = this.ctx;
+    // ── Shared: compute transition geometry ─────────────────
+    _transitionGeometry(from, to) {
         const p1 = this.positions[from];
         const p2 = this.positions[to];
-        if (!p1 || !p2) return;
+        if (!p1 || !p2) return null;
 
         const isActive = this.activeTransition &&
             this.activeTransition.from === from &&
             this.activeTransition.to === to;
 
-        // Check if reverse also exists for curving
         const reverseExists = this.transitions.some(
             t => t.from === to && t.to === from
         );
@@ -354,8 +354,7 @@ class StateDiagramRenderer {
         const angle = Math.atan2(dy, dx);
         const r = this.stateRadius;
 
-        // Perpendicular offset for curving
-        const curveAmount = reverseExists ? 20 : 0;
+        const curveAmount = reverseExists ? 40 : 0;
         const nx = -Math.sin(angle) * curveAmount;
         const ny = Math.cos(angle) * curveAmount;
 
@@ -367,37 +366,74 @@ class StateDiagramRenderer {
         const cpx = (sx + ex) / 2 + nx;
         const cpy = (sy + ey) / 2 + ny;
 
+        return { p1, p2, isActive, reverseExists, angle, r, sx, sy, ex, ey, cpx, cpy };
+    }
+
+    // Pass 1: Draw arrow line + arrowhead only
+    _drawTransitionLine(from, to, labels) {
+        if (from === to) {
+            this._drawSelfLoopLine(from, labels);
+            return;
+        }
+
+        const g = this._transitionGeometry(from, to);
+        if (!g) return;
+
+        const ctx = this.ctx;
         const c = this._colors();
-        const color = isActive ? c.activeLine : c.lineColor;
-        const lw = isActive ? 2.2 : 1.3;
+        const color = g.isActive ? c.activeLine : c.lineColor;
+        const lw = g.isActive ? 2.2 : 1.3;
 
         ctx.save();
-        if (isActive) { ctx.shadowBlur = 8; ctx.shadowColor = c.activeGlow; }
+        if (g.isActive) { ctx.shadowBlur = 8; ctx.shadowColor = c.activeGlow; }
 
         ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.quadraticCurveTo(cpx, cpy, ex, ey);
+        ctx.moveTo(g.sx, g.sy);
+        ctx.quadraticCurveTo(g.cpx, g.cpy, g.ex, g.ey);
         ctx.strokeStyle = color;
         ctx.lineWidth = lw;
         ctx.stroke();
         ctx.restore();
 
-        // Arrowhead angle at endpoint
+        // Arrowhead
         const t = 0.98;
-        const tangentX = 2 * (1 - t) * (cpx - sx) + 2 * t * (ex - cpx);
-        const tangentY = 2 * (1 - t) * (cpy - sy) + 2 * t * (ey - cpy);
+        const tangentX = 2 * (1 - t) * (g.cpx - g.sx) + 2 * t * (g.ex - g.cpx);
+        const tangentY = 2 * (1 - t) * (g.cpy - g.sy) + 2 * t * (g.ey - g.cpy);
         const endAngle = Math.atan2(tangentY, tangentX);
-        this._arrowHead(ex, ey, endAngle, color);
-
-        // Label
-        const labelX = cpx;
-        const labelY = cpy - 8;
-        this._drawLabel(labels, labelX, labelY, isActive);
+        this._arrowHead(g.ex, g.ey, endAngle, color);
     }
 
-    // ── Self-loop ────────────────────────────────────────────
+    // Pass 3: Draw label only (on top of everything)
+    _drawTransitionLabel(from, to, labels) {
+        if (from === to) {
+            this._drawSelfLoopLabel(from, labels);
+            return;
+        }
 
-    _drawSelfLoop(state, labels) {
+        const g = this._transitionGeometry(from, to);
+        if (!g) return;
+
+        // Base offset - dynamically increased to physically clear long label background boxes
+        const labelOffsetDist = g.reverseExists ? 22 : 38;
+        
+        let perpX = -Math.sin(g.angle) * labelOffsetDist;
+        let perpY = Math.cos(g.angle) * labelOffsetDist;
+
+        // For straight lines, ensure the label is pushed ABOVE the line.
+        // If the normal vector points DOWN (perpY > 0), flip it 180 degrees.
+        if (!g.reverseExists && perpY > 0.01) {
+            perpX = -perpX;
+            perpY = -perpY;
+        }
+
+        const labelX = g.cpx + perpX;
+        const labelY = g.cpy + perpY;
+        this._drawLabel(labels, labelX, labelY, g.isActive);
+    }
+
+    // ── Self-loop (line pass) ────────────────────────────────
+
+    _drawSelfLoopLine(state, labels) {
         const ctx = this.ctx;
         const pos = this.positions[state];
         if (!pos) return;
@@ -425,21 +461,44 @@ class StateDiagramRenderer {
         ctx.stroke();
         ctx.restore();
 
-        // Arrowhead at the end of the loop
+        // Arrowhead
         const endAngle = Math.PI * 2 - 0.3;
         const ax = cx + loopR * Math.cos(endAngle);
         const ay = cy + loopR * Math.sin(endAngle);
         this._arrowHead(ax, ay, endAngle + Math.PI / 2.5, color);
+    }
 
-        // Label above loop
-        this._drawLabel(labels, cx, cy - loopR - 6, isActive);
+    // ── Self-loop (label pass) ───────────────────────────────
+
+    _drawSelfLoopLabel(state, labels) {
+        const pos = this.positions[state];
+        if (!pos) return;
+
+        const isActive = this.activeTransition &&
+            this.activeTransition.from === state &&
+            this.activeTransition.to === state;
+
+        const r = this.stateRadius;
+        const loopR = 18;
+        const cx = pos.x;
+        const cy = pos.y - r - loopR + 2;
+
+        const topOfLoop = cy - loopR;
+        const labelGap = 16;
+        const totalHeight = labels.length * labelGap;
+        const startY = topOfLoop - 10 - totalHeight + labelGap;
+
+        labels.forEach((label, i) => {
+            const ly = startY + i * labelGap;
+            this._drawSingleLabel(label, cx, ly, isActive);
+        });
     }
 
     // ── Arrow head ───────────────────────────────────────────
 
     _arrowHead(x, y, angle, color) {
         const ctx = this.ctx;
-        const size = 8;
+        const size = 9;
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
@@ -453,30 +512,50 @@ class StateDiagramRenderer {
         ctx.restore();
     }
 
-    // ── Label for transition ─────────────────────────────────
+    // ── Single label with background ─────────────────────────
 
-    _drawLabel(labels, x, y, isActive) {
+    _drawSingleLabel(label, x, y, isActive) {
         const ctx = this.ctx;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = `500 10px 'JetBrains Mono', monospace`;
 
-        labels.forEach((label, i) => {
-            const ly = y - ((labels.length - 1) * 6) + i * 13;
-            // Background pill  (roundRect with fallback for older browsers)
-            const tw = ctx.measureText(label).width + 8;
-            const c = this._colors();
-            ctx.fillStyle = isActive ? c.labelBgActive : c.labelBg;
-            ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(x - tw / 2, ly - 7, tw, 14, 3);
-            } else {
-                ctx.rect(x - tw / 2, ly - 7, tw, 14);
-            }
-            ctx.fill();
+        const tw = ctx.measureText(label).width + 10;
+        const th = 15;
+        const c = this._colors();
 
-            ctx.fillStyle = isActive ? c.labelActive : c.labelText;
-            ctx.fillText(label, x, ly);
+        // Background pill with higher opacity for readability
+        ctx.fillStyle = isActive ? c.labelBgActive : c.labelBg;
+        ctx.globalAlpha = 0.92;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+            ctx.roundRect(x - tw / 2, y - th / 2, tw, th, 4);
+        } else {
+            ctx.rect(x - tw / 2, y - th / 2, tw, th);
+        }
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+
+        // Subtle border for pill
+        ctx.strokeStyle = isActive ? (this._isDark() ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)') : 'transparent';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+
+        // Text
+        ctx.fillStyle = isActive ? c.labelActive : c.labelText;
+        ctx.fillText(label, x, y);
+    }
+
+    // ── Label group for transition (multi-label) ─────────────
+
+    _drawLabel(labels, x, y, isActive) {
+        const labelGap = 16;
+        const totalHeight = labels.length * labelGap;
+        const startY = y - totalHeight / 2 + labelGap / 2;
+
+        labels.forEach((label, i) => {
+            const ly = startY + i * labelGap;
+            this._drawSingleLabel(label, x, ly, isActive);
         });
     }
 

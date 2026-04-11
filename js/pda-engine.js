@@ -42,6 +42,7 @@ class PDAEngine {
         this.startState       = '';   // e.g. 'q0'
         this.acceptStates     = [];   // e.g. ['q2']
         this.initialStackSymbol = 'Z'; // bottom-of-stack marker
+        this.acceptanceMode   = 'final-state'; // 'final-state' | 'empty-stack'
     }
 
     // ── Configure ────────────────────────────────────────────
@@ -54,6 +55,7 @@ class PDAEngine {
         this.startState         = config.startState       || '';
         this.acceptStates       = config.acceptStates     || [];
         this.initialStackSymbol = config.initialStackSymbol || 'Z';
+        if (config.acceptanceMode) this.acceptanceMode = config.acceptanceMode;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -141,6 +143,10 @@ class PDAEngine {
             if (t.input === 'ε')        epsTrans.push(t);
         }
 
+        console.log('[PDA] Transition lookup:', state, inputChar, stackTop,
+            '→ input:', inputTrans.map(t => `(${t.to}, ${t.stackPush})`).join(', ') || 'none',
+            '| eps:', epsTrans.map(t => `(${t.to}, ${t.stackPush})`).join(', ') || 'none');
+
         return { inputTrans, epsTrans };
     }
 
@@ -210,6 +216,10 @@ class PDAEngine {
      */
     run(inputString, maxConfigs = 5000) {
 
+        console.log('[PDA] run() called — input:', JSON.stringify(inputString),
+            '| mode:', this.acceptanceMode,
+            '| acceptStates:', this.acceptStates);
+
         // ── Step 0: build the initial configuration ──────────
         const initialStep = {
             step:      0,
@@ -229,14 +239,17 @@ class PDAEngine {
             trace:     [initialStep],
         };
 
-        // Special case: empty input + start state is accepting
-        if (inputString === '' && this.acceptStates.includes(this.startState)) {
+        // Special case: empty input + start state is accepting (final-state mode)
+        if (inputString === '' && this.acceptanceMode === 'final-state' && this.acceptStates.includes(this.startState)) {
             return {
                 accepted: true,
                 trace:    initialConfig.trace,
                 message:  'String accepted! (empty input, start state is accepting)',
             };
         }
+
+        // Special case: empty input + empty stack mode
+        // Stack is not empty at start (has initial symbol), so no acceptance here
 
         // ── BFS queue ────────────────────────────────────────
         const queue = [initialConfig];
@@ -246,8 +259,19 @@ class PDAEngine {
             const config = queue.shift();
             explored++;
 
-            // If the stack is empty no transition can fire → dead end
-            if (config.stack.length === 0) continue;
+            // If the stack is empty:
+            //   - In empty-stack mode with input consumed → accept!
+            //   - Otherwise → dead end (no transition can fire)
+            if (config.stack.length === 0) {
+                if (this.acceptanceMode === 'empty-stack' && config.remaining === '') {
+                    return {
+                        accepted: true,
+                        trace:    config.trace,
+                        message:  'String accepted! (stack is empty)',
+                    };
+                }
+                continue;
+            }
 
             const stackTop  = config.stack[0];
             const inputChar = config.remaining.length > 0
@@ -287,12 +311,21 @@ class PDAEngine {
                     };
 
                     // ✅ Acceptance check
-                    if (newRemaining === '' && this.acceptStates.includes(t.to)) {
-                        return {
-                            accepted: true,
-                            trace:    newConfig.trace,
-                            message:  'String accepted!',
-                        };
+                    if (newRemaining === '') {
+                        if (this.acceptanceMode === 'final-state' && this.acceptStates.includes(t.to)) {
+                            return {
+                                accepted: true,
+                                trace:    newConfig.trace,
+                                message:  'String accepted!',
+                            };
+                        }
+                        if (this.acceptanceMode === 'empty-stack' && newStack.length === 0) {
+                            return {
+                                accepted: true,
+                                trace:    newConfig.trace,
+                                message:  'String accepted! (stack is empty)',
+                            };
+                        }
                     }
 
                     queue.push(newConfig);
@@ -325,12 +358,21 @@ class PDAEngine {
                 };
 
                 // ✅ Acceptance check
-                if (config.remaining === '' && this.acceptStates.includes(t.to)) {
-                    return {
-                        accepted: true,
-                        trace:    newConfig.trace,
-                        message:  'String accepted!',
-                    };
+                if (config.remaining === '') {
+                    if (this.acceptanceMode === 'final-state' && this.acceptStates.includes(t.to)) {
+                        return {
+                            accepted: true,
+                            trace:    newConfig.trace,
+                            message:  'String accepted!',
+                        };
+                    }
+                    if (this.acceptanceMode === 'empty-stack' && newStack.length === 0) {
+                        return {
+                            accepted: true,
+                            trace:    newConfig.trace,
+                            message:  'String accepted! (stack is empty)',
+                        };
+                    }
                 }
 
                 queue.push(newConfig);
@@ -366,8 +408,11 @@ class PDAEngine {
         else if (!this.states.includes(this.startState))
             errors.push(`Start state "${this.startState}" is not in the state set.`);
 
-        if (!this.acceptStates.length)
-            errors.push('No accept states specified.');
+        // Accept states are only required in final-state mode
+        if (this.acceptanceMode === 'final-state') {
+            if (!this.acceptStates.length)
+                errors.push('No accept states specified.');
+        }
 
         for (const s of this.acceptStates) {
             if (!this.states.includes(s))

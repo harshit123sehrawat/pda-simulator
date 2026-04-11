@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', function () {
         inputString: $('input-string'),
         btnRun: $('btn-run'),
         btnStep: $('btn-step'),
+        btnStepBack: $('btn-step-back'),
         btnReset: $('btn-reset'),
         speedSlider: $('speed-slider'),
         speedLabel: $('speed-label'),
@@ -84,6 +85,8 @@ document.addEventListener('DOMContentLoaded', function () {
         genValidation: $('gen-validation'),
         genValResults: $('gen-val-results'),
         pdaModeToggle: $('pda-mode-toggle'),
+        acceptanceModeToggle: $('acceptance-mode-toggle'),
+        stackPanel: $('stack-panel'),
 
         // Canvas area
         canvasArea: $('canvas-area'),
@@ -139,6 +142,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var isRunning = false;
     var lastResult = null;
     var fullInputString = '';
+    var historyStack = [];      // array of snapshots for step-back
+    var acceptanceMode = 'final-state'; // 'final-state' | 'empty-stack'
 
     // ═══════════════════════════════════════════════════════════
     //  4. STACK COLOUR MAPPING
@@ -176,6 +181,7 @@ document.addEventListener('DOMContentLoaded', function () {
             transitions: parsed,
         };
         engine.configure(config);
+        engine.acceptanceMode = acceptanceMode;
         renderer.configure(config.states, config.transitions,
             config.startState, config.acceptStates);
         return config;
@@ -282,8 +288,10 @@ document.addEventListener('DOMContentLoaded', function () {
         var speed = getSpeedMs();
         animTimer = setInterval(function () {
             if (stepIndex < trace.length - 1) {
+                saveSnapshot();
                 stepIndex++;
                 showStep(stepIndex);
+                updateStepBackBtn();
             } else {
                 stopAnim();
                 finishSimulation(result);
@@ -314,8 +322,10 @@ document.addEventListener('DOMContentLoaded', function () {
         stopAnim();
         dom.btnRun.disabled = false;
         if (stepIndex < trace.length - 1) {
+            saveSnapshot();
             stepIndex++;
             showStep(stepIndex);
+            updateStepBackBtn();
             if (stepIndex >= trace.length - 1) {
                 finishSimulation(lastResult || { accepted: false, message: 'String rejected.' });
             }
@@ -328,6 +338,7 @@ document.addEventListener('DOMContentLoaded', function () {
         trace = []; stepIndex = -1;
         isRunning = false; lastResult = null;
         previousStack = null; hueIdx = 0;
+        historyStack = [];
         Object.keys(symbolColors).forEach(function (k) { delete symbolColors[k]; });
 
         setStatus('ready');
@@ -344,6 +355,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         dom.btnStep.disabled = false;
         dom.btnRun.disabled = false;
+        dom.btnStepBack.disabled = true;
         dom.inputPosition.classList.add('hidden');
         dom.inputPosChars.innerHTML = '';
         dom.canvasArea.classList.remove('reject-flash', 'reject-shake');
@@ -414,6 +426,64 @@ document.addEventListener('DOMContentLoaded', function () {
         addTraceRow(step);
         dom.tracePlaceholder.style.display = 'none';
         dom.traceStepCount.textContent = 'Step ' + step.step + '/' + (trace.length - 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  10b. HISTORY STACK FOR STEP BACK
+    // ═══════════════════════════════════════════════════════════
+
+    function saveSnapshot() {
+        var step = trace[stepIndex] || trace[0];
+        historyStack.push({
+            stepIndex: stepIndex,
+            stackVisualHTML: dom.stackVisual.innerHTML,
+            currentState: dom.currentState.textContent,
+            remainingInput: dom.remainingInput.textContent,
+            traceBodyHTML: dom.traceBody.innerHTML,
+            traceBodyFullHTML: dom.traceBodyFull.innerHTML,
+            previousStack: previousStack ? previousStack.slice() : null,
+        });
+    }
+
+    function stepBack() {
+        if (historyStack.length === 0) return;
+        stopAnim();
+        hideResult();
+        dom.canvasArea.classList.remove('reject-flash', 'reject-shake');
+        dom.stackVisual.classList.remove('reject-shake');
+        isRunning = true;
+
+        var snapshot = historyStack.pop();
+        stepIndex = snapshot.stepIndex;
+        previousStack = snapshot.previousStack;
+
+        // Restore the UI from the snapshot
+        dom.stackVisual.innerHTML = snapshot.stackVisualHTML;
+        dom.currentState.textContent = snapshot.currentState;
+        dom.remainingInput.textContent = snapshot.remainingInput;
+        dom.traceBody.innerHTML = snapshot.traceBodyHTML;
+        dom.traceBodyFull.innerHTML = snapshot.traceBodyFullHTML;
+
+        // Restore the renderer state
+        var step = trace[stepIndex];
+        if (step) {
+            if (step.transition) renderer.highlight(step.state, { from: step.from, to: step.to });
+            else renderer.highlight(step.state, null);
+            showActiveTransition(step);
+            // Restore input visualizer
+            var consumed = fullInputString.length - (step.remaining ? step.remaining.length : 0);
+            updateInputVisualizer(consumed, step.input);
+            dom.traceStepCount.textContent = 'Step ' + step.step + '/' + (trace.length - 1);
+        }
+
+        setStatus('running');
+        dom.btnStep.disabled = false;
+        dom.btnRun.disabled = false;
+        updateStepBackBtn();
+    }
+
+    function updateStepBackBtn() {
+        dom.btnStepBack.disabled = historyStack.length === 0;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -779,7 +849,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             try {
-                var config = LanguageParser.parse(lang, mode);
+                var config = LanguageParser.parse(lang, mode, acceptanceMode);
 
                 // ── Determine theme ──────────────────────────
                 var isDPDA = config.pdaType === 'DPDA';
@@ -942,6 +1012,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     dom.btnRun.addEventListener('click', startRun);
     dom.btnStep.addEventListener('click', stepOnce);
+    dom.btnStepBack.addEventListener('click', stepBack);
     dom.btnReset.addEventListener('click', resetSimulation);
 
     dom.speedSlider.addEventListener('input', function () {
@@ -952,8 +1023,10 @@ document.addEventListener('DOMContentLoaded', function () {
             dom.btnRun.disabled = true;
             animTimer = setInterval(function () {
                 if (stepIndex < trace.length - 1) {
+                    saveSnapshot();
                     stepIndex++;
                     showStep(stepIndex);
+                    updateStepBackBtn();
                 } else {
                     stopAnim();
                     finishSimulation(lastResult || { accepted: false, message: 'Done.' });
@@ -999,6 +1072,34 @@ document.addEventListener('DOMContentLoaded', function () {
     renderer.resize();
     loadExample('balanced-parens');
     dom.exampleSelect.value = 'balanced-parens';
+
+    // ── Acceptance Mode Toggle Wiring ──────────────────────────
+    if (dom.acceptanceModeToggle) {
+        var acceptBtns = dom.acceptanceModeToggle.querySelectorAll('.acceptance-mode-btn');
+        acceptBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var newMode = btn.getAttribute('data-mode');
+                if (newMode === acceptanceMode) return;
+                acceptBtns.forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                acceptanceMode = newMode;
+                engine.acceptanceMode = acceptanceMode;
+                // Update visual indicators
+                updateAcceptanceModeVisuals();
+                // Reset simulation but keep PDA structure
+                resetSimulation();
+                if (window.lucide) lucide.createIcons();
+            });
+        });
+    }
+
+    function updateAcceptanceModeVisuals() {
+        if (acceptanceMode === 'empty-stack') {
+            dom.stackPanel.classList.add('empty-stack-mode');
+        } else {
+            dom.stackPanel.classList.remove('empty-stack-mode');
+        }
+    }
 
     console.log('[PDA] App ready ✓ — sidebar hidden, use ☰ or Ctrl+B to toggle');
 });
