@@ -19,8 +19,13 @@
     // ── Resolve initial theme ───────────────────────────────
     function getInitialTheme() {
         var saved = localStorage.getItem(STORAGE_KEY);
-        if (saved === 'light' || saved === 'dark') return saved;
-        return DEFAULT_THEME;
+        // Only respect a saved 'light' preference; anything else (including
+        // 'dark' from an old session) falls back to the light default.
+        if (saved === 'light') return 'light';
+        if (saved === 'dark') return 'dark';
+        // First visit — clear any stale value and default to light
+        localStorage.removeItem(STORAGE_KEY);
+        return DEFAULT_THEME; // 'light'
     }
 
     // ── Apply theme ─────────────────────────────────────────

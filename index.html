@@ -7,6 +7,16 @@
     <title>PDA Simulator — Pushdown Automata</title>
     <meta name="description" content="Interactive Pushdown Automata simulator with step-by-step visualization">
 
+    <!-- ── Instant theme init (prevents dark flash) ── -->
+    <script>
+        (function() {
+            var saved = localStorage.getItem('pda-theme');
+            // Default is always 'light' unless user explicitly chose 'dark'
+            var theme = (saved === 'dark') ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
