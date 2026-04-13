@@ -284,14 +284,14 @@ class LanguageParser {
      */
     static decidePDAType(type) {
         switch (type) {
-            case 'REGULAR':           return 'DPDA';
+            case 'REGULAR': return 'DPDA';
             case 'SINGLE_DEPENDENCY': return 'DPDA';
-            case 'LINEAR':           return 'DPDA';
-            case 'NESTED':           return 'DPDA';
-            case 'PALINDROME_MARKED':return 'DPDA';
-            case 'PALINDROME':       return 'NPDA';
+            case 'LINEAR': return 'DPDA';
+            case 'NESTED': return 'DPDA';
+            case 'PALINDROME_MARKED': return 'DPDA';
+            case 'PALINDROME': return 'NPDA';
             case 'MULTI_DEPENDENCY': return 'NOT_POSSIBLE';
-            default:                 return 'NOT_POSSIBLE';
+            default: return 'NOT_POSSIBLE';
         }
     }
 

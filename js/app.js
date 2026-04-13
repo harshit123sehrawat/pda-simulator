@@ -699,7 +699,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             viewport.addEventListener('mousedown', function (e) {
                 if (e.target.closest('.zoom-controls') || e.target.closest('#stack-panel') || e.target.closest('.glass-bar')) return;
-                
+
                 isDragging = true;
                 startX = e.clientX - panX;
                 startY = e.clientY - panY;
@@ -886,8 +886,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 // ── Examples ─────────────────────────────────
                 if (config.examples) {
                     dom.genExamples.classList.remove('hidden');
-                    var accStrs = config.examples.accepted.map(function(s) { return s === '' ? 'ε' : s; });
-                    var rejStrs = config.examples.rejected.map(function(s) { return s === '' ? 'ε' : s; });
+                    var accStrs = config.examples.accepted.map(function (s) { return s === '' ? 'ε' : s; });
+                    var rejStrs = config.examples.rejected.map(function (s) { return s === '' ? 'ε' : s; });
                     dom.genExAcc.textContent = accStrs.join(', ') || 'N/A';
                     dom.genExRej.textContent = rejStrs.join(', ') || 'N/A';
                 }

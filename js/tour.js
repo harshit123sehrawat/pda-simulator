@@ -159,17 +159,17 @@
 
         tooltip.innerHTML =
             '<div class="tour-tooltip-header">' +
-                '<span class="tour-tooltip-step">' + (idx + 1) + '/' + STEPS.length + '</span>' +
-                '<button class="tour-skip-btn" id="tour-btn-skip" title="Skip tour">✕</button>' +
+            '<span class="tour-tooltip-step">' + (idx + 1) + '/' + STEPS.length + '</span>' +
+            '<button class="tour-skip-btn" id="tour-btn-skip" title="Skip tour">✕</button>' +
             '</div>' +
             '<h3 class="tour-tooltip-title">' + step.title + '</h3>' +
             '<p class="tour-tooltip-text">' + step.text + '</p>' +
             '<div class="tour-tooltip-progress">' + progressDots + '</div>' +
             '<div class="tour-tooltip-nav">' +
-                (idx > 0 ? '<button class="tour-btn tour-btn-back" id="tour-btn-back">← Back</button>' : '<span></span>') +
-                (idx < STEPS.length - 1
-                    ? '<button class="tour-btn tour-btn-next" id="tour-btn-next">Next →</button>'
-                    : '<button class="tour-btn tour-btn-finish" id="tour-btn-finish">Done ✓</button>') +
+            (idx > 0 ? '<button class="tour-btn tour-btn-back" id="tour-btn-back">← Back</button>' : '<span></span>') +
+            (idx < STEPS.length - 1
+                ? '<button class="tour-btn tour-btn-next" id="tour-btn-next">Next →</button>'
+                : '<button class="tour-btn tour-btn-finish" id="tour-btn-finish">Done ✓</button>') +
             '</div>';
 
         // Position tooltip based on step.position
