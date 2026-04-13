@@ -55,24 +55,24 @@ class StateDiagramRenderer {
     _colors() {
         const dark = this._isDark();
         return {
-            emptyText:    dark ? '#555' : '#9ca3af',
-            stateFill:    dark ? 'rgba(30,30,30,0.95)' : 'rgba(249,250,251,0.95)',
-            stateStroke:  dark ? '#555' : '#9ca3af',
-            stateLabel:   dark ? '#ccc' : '#374151',
-            activeLabel:  dark ? '#fff' : '#111',
-            lineColor:    dark ? '#555' : '#9ca3af',
-            activeLine:   dark ? '#fff' : '#111',
-            activeGlow:   dark ? '#fff' : '#111',
-            activeHl:     dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            emptyText: dark ? '#555' : '#9ca3af',
+            stateFill: dark ? 'rgba(30,30,30,0.95)' : 'rgba(249,250,251,0.95)',
+            stateStroke: dark ? '#555' : '#9ca3af',
+            stateLabel: dark ? '#ccc' : '#374151',
+            activeLabel: dark ? '#fff' : '#111',
+            lineColor: dark ? '#555' : '#9ca3af',
+            activeLine: dark ? '#fff' : '#111',
+            activeGlow: dark ? '#fff' : '#111',
+            activeHl: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
             activeStroke: dark ? '#fff' : '#111',
-            shadowColor:  dark ? '#fff' : '#111',
-            startArrow:   dark ? '#ccc' : '#374151',
-            rejectFill:   dark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)',
+            shadowColor: dark ? '#fff' : '#111',
+            startArrow: dark ? '#ccc' : '#374151',
+            rejectFill: dark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)',
             rejectStroke: '#ef4444',
-            labelBg:      dark ? 'rgba(20,20,20,0.9)' : 'rgba(249,250,251,0.95)',
-            labelBgActive:dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            labelText:    dark ? '#aaa' : '#6b7280',
-            labelActive:  dark ? '#fff' : '#111',
+            labelBg: dark ? 'rgba(20,20,20,0.9)' : 'rgba(249,250,251,0.95)',
+            labelBgActive: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            labelText: dark ? '#aaa' : '#6b7280',
+            labelActive: dark ? '#fff' : '#111',
         };
     }
 
@@ -413,14 +413,16 @@ class StateDiagramRenderer {
         const g = this._transitionGeometry(from, to);
         if (!g) return;
 
-        // Base offset - dynamically increased to physically clear long label background boxes
-        const labelOffsetDist = g.reverseExists ? 22 : 38;
-        
+        // Dynamic perpendicular offset: base + full label block half-height + padding
+        const labelGap = 15;
+        const blockHalfH = (labels.length * labelGap) / 2;
+        const base = g.reverseExists ? 22 : 28;
+        const labelOffsetDist = base + blockHalfH;
+
         let perpX = -Math.sin(g.angle) * labelOffsetDist;
         let perpY = Math.cos(g.angle) * labelOffsetDist;
 
-        // For straight lines, ensure the label is pushed ABOVE the line.
-        // If the normal vector points DOWN (perpY > 0), flip it 180 degrees.
+        // Ensure the label is pushed to the LEFT/UP side of the line, not right/down.
         if (!g.reverseExists && perpY > 0.01) {
             perpX = -perpX;
             perpY = -perpY;
@@ -428,7 +430,7 @@ class StateDiagramRenderer {
 
         const labelX = g.cpx + perpX;
         const labelY = g.cpy + perpY;
-        this._drawLabel(labels, labelX, labelY, g.isActive);
+        this._drawLabelBlock(labels, labelX, labelY, g.isActive);
     }
 
     // ── Self-loop (line pass) ────────────────────────────────
@@ -443,9 +445,9 @@ class StateDiagramRenderer {
             this.activeTransition.to === state;
 
         const r = this.stateRadius;
-        const loopR = 18;
+        const loopR = 20;
         const cx = pos.x;
-        const cy = pos.y - r - loopR + 2;
+        const cy = pos.y - r - loopR + 3; // +3 to properly intersect the node's bounds
 
         const c = this._colors();
         const color = isActive ? c.activeLine : c.lineColor;
@@ -454,18 +456,21 @@ class StateDiagramRenderer {
         ctx.save();
         if (isActive) { ctx.shadowBlur = 8; ctx.shadowColor = c.activeGlow; }
 
+        const startAngle = Math.PI / 2 + 0.45;
+        const endAngle = Math.PI * 2.5 - 0.45;
+
         ctx.beginPath();
-        ctx.arc(cx, cy, loopR, 0.3, Math.PI * 2 - 0.3);
+        ctx.arc(cx, cy, loopR, startAngle, endAngle);
         ctx.strokeStyle = color;
         ctx.lineWidth = lw;
         ctx.stroke();
         ctx.restore();
 
         // Arrowhead
-        const endAngle = Math.PI * 2 - 0.3;
         const ax = cx + loopR * Math.cos(endAngle);
         const ay = cy + loopR * Math.sin(endAngle);
-        this._arrowHead(ax, ay, endAngle + Math.PI / 2.5, color);
+        const arrowHeading = endAngle + Math.PI / 2 - 0.08;
+        this._arrowHead(ax, ay, arrowHeading, color);
     }
 
     // ── Self-loop (label pass) ───────────────────────────────
@@ -479,19 +484,19 @@ class StateDiagramRenderer {
             this.activeTransition.to === state;
 
         const r = this.stateRadius;
-        const loopR = 18;
+        const loopR = 20;
         const cx = pos.x;
-        const cy = pos.y - r - loopR + 2;
+        const cy = pos.y - r - loopR + 3;
 
+        // Place the bottom of the label block well above the arc top
         const topOfLoop = cy - loopR;
-        const labelGap = 16;
-        const totalHeight = labels.length * labelGap;
-        const startY = topOfLoop - 10 - totalHeight + labelGap;
+        const safeMargin = 14;
+        const labelGap = 15;
+        const blockH = labels.length * labelGap;
+        // Centre-Y of the block sits so its bottom is at (topOfLoop - safeMargin)
+        const blockCenterY = topOfLoop - safeMargin - blockH / 2;
 
-        labels.forEach((label, i) => {
-            const ly = startY + i * labelGap;
-            this._drawSingleLabel(label, cx, ly, isActive);
-        });
+        this._drawLabelBlock(labels, cx, blockCenterY, isActive);
     }
 
     // ── Arrow head ───────────────────────────────────────────
@@ -546,17 +551,63 @@ class StateDiagramRenderer {
         ctx.fillText(label, x, y);
     }
 
+    // ── Unified label block (single background for all stacked labels) ───
+
+    _drawLabelBlock(labels, cx, cy, isActive) {
+        if (!labels || labels.length === 0) return;
+        const ctx = this.ctx;
+        const c = this._colors();
+        const labelGap = 15;
+        const padX = 10;
+        const padY = 6;
+
+        ctx.font = `500 10px 'JetBrains Mono', monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Measure widest label
+        let maxW = 0;
+        labels.forEach(l => { maxW = Math.max(maxW, ctx.measureText(l).width); });
+
+        const boxW = maxW + padX * 2;
+        const boxH = labels.length * labelGap + padY * 2;
+        const boxX = cx - boxW / 2;
+        const boxY = cy - boxH / 2;
+
+        // Single combined background
+        ctx.fillStyle = isActive ? c.labelBgActive : c.labelBg;
+        ctx.globalAlpha = 0.93;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 5);
+        else ctx.rect(boxX, boxY, boxW, boxH);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+
+        // Subtle border
+        ctx.strokeStyle = isActive
+            ? (this._isDark() ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.10)')
+            : (this._isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)');
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        // Draw each label line
+        ctx.fillStyle = isActive ? c.labelActive : c.labelText;
+        const firstLineY = cy - ((labels.length - 1) * labelGap) / 2;
+        labels.forEach((label, i) => {
+            ctx.fillText(label, cx, firstLineY + i * labelGap);
+        });
+    }
+
+    // ── Legacy single-label helper (kept for compatibility) ──────────────
+
+    _drawSingleLabel(label, x, y, isActive) {
+        this._drawLabelBlock([label], x, y, isActive);
+    }
+
     // ── Label group for transition (multi-label) ─────────────
 
     _drawLabel(labels, x, y, isActive) {
-        const labelGap = 16;
-        const totalHeight = labels.length * labelGap;
-        const startY = y - totalHeight / 2 + labelGap / 2;
-
-        labels.forEach((label, i) => {
-            const ly = startY + i * labelGap;
-            this._drawSingleLabel(label, x, ly, isActive);
-        });
+        this._drawLabelBlock(labels, x, y, isActive);
     }
 
     // ── Mouse Events for Dragging ────────────────────────────
@@ -571,8 +622,8 @@ class StateDiagramRenderer {
     _getMousePos(e) {
         const rect = this.canvas.getBoundingClientRect();
         return {
-            x: (e.clientX - rect.left) * this.dpr,
-            y: (e.clientY - rect.top) * this.dpr
+            x: (e.clientX - rect.left) * (this.canvas.clientWidth / rect.width),
+            y: (e.clientY - rect.top) * (this.canvas.clientHeight / rect.height)
         };
     }
 
@@ -600,6 +651,7 @@ class StateDiagramRenderer {
             this.canvas.style.cursor = 'grabbing';
             // Optional: Draw once to show immediate interaction
             this.draw();
+            e.stopPropagation(); // Prevents the canvas pan script in app.js from triggering when dragging a node
         }
     }
 
